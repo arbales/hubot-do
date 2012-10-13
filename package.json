@@ -1,0 +1,24 @@
+{
+  "name":        "hubot-do",
+  "version":     "0.0.1",
+  "author":      "arbales",
+  "keywords":    "github do do.com hubot adapter",
+  "description": "A Do adapter for hubot",
+  "licenses":     [{
+    "type":       "MIT",
+    "url":        "http://github.com/arbales/hubot-do/raw/master/LICENSE"
+  }],
+  "repository" : {
+    "type" : "git",
+    "url" : "http://github.com/arbales/hubot-do.git"
+  },
+  "dependencies": {
+    "superagent": "0.9.5",
+    "underscore": "1.4.2",
+    "faye": "0.8.6"
+  },
+  "devDependencies": {
+    "coffee-script": "1.3.3"
+  },
+  "main": "./src/do"
+}
