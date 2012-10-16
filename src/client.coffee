@@ -1,6 +1,6 @@
 _              = require 'underscore'
 _.mixin require('underscore.string').exports()
-
+ENV            = process.env
 {EventEmitter} = require 'events'
 Request        = require 'superagent'
 Credentials    = require './credentials'
@@ -10,7 +10,7 @@ _.noop = ->
 CONVENIENCE_METHODS = ['get', 'post', 'put', 'patch', 'del']
 
 class Client extends EventEmitter
-  root: 'https://deathstar-staging.herokuapp.com'
+  root: ENV.HUBOT_DO_ROOT || 'https://www.do.com'
   json: yes
   tokenPath: '/oauth2/token'
   authorizationPath: '/oauth2/authorize'
@@ -117,7 +117,7 @@ class Client extends EventEmitter
     #
     if options.useCredentials and @credentials?.expired()
       # Reauthorize the client.
-      @authorize (credentials) ->
+      @authenticate (credentials) ->
         # Reset the acessToken on the request an trigger the appropriate event.
         r.set('Authorization', "Bearer #{credentials.accessToken}") if credentials.valid() and options.useCredentials
         r.emit('authorization:set')

@@ -1,6 +1,7 @@
 _         = require 'underscore'
 Faye      = require 'faye'
-PUSH_URL  = "https://push-staging.do.com"
+ENV       = process.env
+PUSH_URL  = ENV.HUBOT_DO_PUSH_URL || "https://push.do.com"
 
 _.noop = ->
 

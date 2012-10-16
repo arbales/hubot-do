@@ -8,7 +8,7 @@ ENV     =  process.env
 Client                                           = require './client'
 {PushManager, AccountManager, HubotResponder}    = require './roles'
 
-debug = if ENV.DO_HUBOT_DEBUG is 'true' then console.log else (->)
+debug = if ENV.HUBOT_DO_DEBUG is 'true' then console.log else (->)
 
 class DoAdapter extends Adapter
 
@@ -54,14 +54,14 @@ class DoAdapter extends Adapter
       debug "Authentication succeeded."
       client.fetchAccount()
 
-    client.on 'request:complete', (request, response) ->
-      debug response.text
+    client.on 'request:complete', (res) ->
+      debug "#{res.status} #{res.req.method} '#{res.req.path}'"
 
     client.on 'account:create', ->
       debug "Account fetched."
       client.connectPush()
 
-    client.on 'push:connect', ->
+    client.on 'push:connect', =>
       debug "Push Connected"
       @emit 'connected'
 
