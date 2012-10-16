@@ -1,94 +1,71 @@
 _              = require 'underscore'
-{EventEmitter} = require 'events'
-request        = require 'superagent'
-Faye           = require 'faye'
+_.mixin require('underscore.string').exports()
 
-# Use the non-apex domain for highest QOS.
-API_URL            = "https://deathstar-staging.herokuapp.com"
-AUTHORIZE_ENDPOINT = "/oauth2/authorize"
-TOKEN_ENDPOINT     = "/oauth2/token"
-GRANT_TYPE         = "password"
-REFRESH_GRANT_TYPE = "refresh_token"
-PUSH_URL           = "https://push-staging.do.com"
+{EventEmitter} = require 'events'
+Request        = require 'superagent'
+Credentials    = require './credentials'
 
 _.noop = ->
 
-class Credentials
-  constructor: (r, @client) ->
-    expiresInMs = (r['expires_in'] - 10) * 1000
-    [@accessToken, @refreshToken, @expiresAt] = [r['access_token'], r['refresh_token'], Date.now() + expiresInMs]
-    setTimeout =>
-      @client.emit 'authorization:expired'
-    , expiresInMs
-
-  valid: ->
-    Date.now() < @expiresAt
-
-ClientActions =
-  set: (key, value) ->
-    event = if @[key] then "updated" else "created"
-    @[key] = value
-    @emit "#{key}:#{event}"
-
-  fetchAccount: (success=_.noop) ->
-    @get('/account')
-      .end (error, response) =>
-        if response.ok
-          @set 'account', response.body
+CONVENIENCE_METHODS = ['get', 'post', 'put', 'patch', 'del']
 
 class Client extends EventEmitter
-  # Generate convenience methods that utilize our request wrapper.
-  for method in ['get', 'post', 'put', 'patch', 'del']
-    @::[method] = do (method) ->
-      (url, rest...) -> @request(method, url, rest...)
-  
+  root: 'https://deathstar-staging.herokuapp.com'
+  json: yes
+  tokenPath: '/oauth2/token'
+  authorizationPath: '/oauth2/authorize'
+
+  # Stub method for you to use.
+  initialize: (->)
+
+
+  # Returns a new child client that can be customized in place
+  # but that uses the master client's networking and authentication.
+  #
+  #     client = new Client(...)
+  #     client.authorize()
+  #
+  #     client.on 'authorization:success'
+  #       accountClient = _.extend client.child(), Roles.AccountManager
+  #       accountClient.all (accountData) ->
+  #         console.log accountData
+  #
+  #       push = _.extend client.child(), Roles.PushManager
+  #       push.connect {pushToken: ...}
+  #
+  #
+  child: (child = yes) ->
+    c = new Client(@options)
+
+    if child
+      c._isChild = yes
+      c.request = @request
+      for method in CONVENIENCE_METHODS
+        c[method] = @[method]
+    c
+
   # Create a Client object and assign the passed options
   # to the instance.
   #
-  constructor: (@options) ->
-    # @on 'account:succeeded', @connectPush
-    @on 'authorization:expired', @authorize
+  constructor: (@options) ->  
+    _.bindAll @, 'request', 'child', 'authenticate'
+    _.bindAll @, CONVENIENCE_METHODS...
 
+    for key in ['root','json','tokenPath','authorizationPath']
+      @[key] = @options[key] if @options[key]
 
-  sendMessage: (message, user) =>
-    @post("/workspaces/#{user.room.workspace_id}/rooms/#{user.room.id}/chats")
-      .send({text: string})
-      .end()
+    unless @root
+      throw new Error('You must set a root property on your client.')
+    @initialize(arguments...)
 
-  receiveMessage: (message) =>
-    switch message.type
-      when 'chats'
-        switch message.action
-          when 'add'
-            @emit "TextMessage", message.payload
-            
-  connectPush: ->
-    @get('/ping')
-      .end (error, response) =>
-        if response.ok
-          token = response.body.push_token
-          @pushClient = new Faye.Client PUSH_URL,
-            timeout: 30
-            retry: 15
-
-          @pushClient.addExtension
-            # Detect subscription failures that might happen on reconnects. Notify the
-            # connection manager since there might be a stale session.
-            incoming: (message, callback) =>
-              if message.channel == '/meta/subscribe' && !message.successful
-                # Do.connection.check()
-                @emit 'message:failure'
-              callback message
-
-            # Attach token to subscription messages.
-            outgoing: (message, callback) =>
-              if message.channel == '/meta/subscribe'
-                message.ext ||= {}
-                message.ext.token = token
-              callback message
-          _.defer =>
-            @pushClient.subscribe("/users/#{@account.id}", @receiveMessage)
-            @emit 'push:connected'
+  # Public: Triggers events on updating or creating properties on the client. 
+  #
+  # Returns the `value`
+  set: (key, value) ->
+    event = if @[key] then "update" else "create"
+    @[key] = value
+    @emit "#{key}:#{event}"
+    value
 
   # Private: Make a JSON request to the API and optionally
   # set the `Authorization` header if it's available.
@@ -97,51 +74,133 @@ class Client extends EventEmitter
   # url    - the URL you'd like to reach
   #
   # Returns a Superagent Request
-  request: (method, url) ->
-    url = if url[0] is '/' then [API_URL,url].join('') else url
-    r = request[method](url)
-      .set('Accept', 'application/json')
-      .type('json')
-      .on('end', => @_onRequestCompletion(new request.Response(r.req, r.res)))
-    r.set('Authorization', "Bearer #{@credentials.accessToken}") if @credentials?.valid()
-    r
+  request: (method, url, options={}) ->
+    throw "Cannot call #request on child clients." if @_isChild
+    _.defaults options,
+      useCredentials: yes
+      prefix: ''
 
-  _onRequestCompletion: (response) ->
-    console.log "request:successful" if response.ok
+    options.prefix += if _.isNumber(w = options.workspace)
+      "/workspaces/#{w}"
+    else if _.isObject(w=options.workspace)
+      "/workspaces/#{w.id}"
+    else
+      ""
 
-  # Public: Authorize the API client, caching credentials on success
+    # Add a prefix to your URL if it's relative.
+    url = [options.prefix, url].join('') if url[0] is '/'
+
+    # If the URL is root-relative, which it usually should be, then
+    # join the API Root against it.
+    #
+    url = if url[0] is '/' then [@root, url].join('') else url
+
+    # Create a request and set the appropriate headers for calling the Do
+    # Open API. Conditionally sets the `Authorization` as well.
+    #
+    r = Request[method](url)
+      .on('end', => @_onRequestCompletion(new Request.Response(r.req, r.res), r))
+
+    (r.on 'success', -> options.success(response)) if options.success
+
+    (r.on 'fail', -> options.failure(response)) if options.failure
+
+    # If you're making requests against a JSON API, set the accept header.
+    if @type is 'json'
+      r.set('Accept', 'application/json').type('json')
+
+    r.set('Authorization', "Bearer #{@credentials.accessToken}") if @credentials?.valid() and options.useCredentials
+
+    # If credentials exist, are expired, and this request requires credentials,
+    # then re-authorize the client with a refresh token and wrap the call to `end`
+    # so that it waits for a successful reauthorization.
+    #
+    if options.useCredentials and @credentials?.expired()
+      # Reauthorize the client.
+      @authorize (credentials) ->
+        # Reset the acessToken on the request an trigger the appropriate event.
+        r.set('Authorization', "Bearer #{credentials.accessToken}") if credentials.valid() and options.useCredentials
+        r.emit('authorization:set')
+
+      r.end = ->
+        # If `#end` is called on the request after the token fetch completes, 
+        # proceed normally.
+        if r.get('Authorization')
+          r::end(arguments...)
+
+        # Otherwise, have this request wait until reauthorization.
+        else
+          r.on 'authorization:set', ->
+            r::end(arguments...)
+
+    r # the Superagent request
+
+  # Generate convenience methods that utilize our request wrapper. 
+  #
+  for method in CONVENIENCE_METHODS
+    @::[method] = do (method) ->
+      (url, rest...) -> @request(method, url, rest...)
+
+  # Private: Dispatches events to inform interested objects about the status of
+  # a particular request.
+  #
+  # Returns nothing
+  _onRequestCompletion: (response, request) ->
+    @emit 'request:complete', arguments...
+    request.emit("success", arguments...) if response.ok
+    request.emit("fail", arguments...) if response.error
+
+  # Public: Authenticate the API client, caching credentials on success
   # and emit events to indicate the authorization's success or failure.
   #
   # Returns a Superagent Request
-  authorize: (success, failure) ->
+  authenticate: (options, success=_.noop, failure=_.noop) ->
+    throw "Cannot call #authenticate on child clients." if @_isChild
+    _.defaults options,
+      username: ''
+      password: ''
+      code: ''
+      grantType: if @credentials then 'refresh_token' else 'password'
 
-    # If credentials already exist, then we're trying to
-    # use a refresh token.
-    currentGrantContext = if @credentials then {
-        refresh_token   : @credentials.refresh_token
-        grant_type      : REFRESH_GRANT_TYPE
-    # If they don't we're using the password grant flow.
-      } else {
-        username        : @options.username
-        password        : @options.password
-        grant_type      : GRANT_TYPE
-      }
+    # Choose the appropriate credentials for a given 
+    # grant type.
+    #
+    credentials = switch options.grantType
 
-    # Acquire a Bearer token from the API.
-    @post(TOKEN_ENDPOINT)
-      .send(_.extend({
+      when 'refresh_token'
+        refresh_token   : @credentials.refreshToken
+        grant_type      : 'refresh_token'
+      when 'password'
+        username        : options.username
+        password        : options.password
+        grant_type      : options.grantType
+      when 'authorization_code'
+        code            : options.code
+        grant_type      : options.grantType
+
+      # Throw an error when an unimplemented grant type is used.
+      else (throw new Error "Unsupported grant type: #{options.grantType}.")
+
+    # Acquire a Bearer token from the provider.
+    # Set `usesCredentials` to `no` so that the Authorizaton header is
+    # not send for this request, and no attempt to refresh will be made.
+    #
+    @post(@tokenPath, usesCredentials: no)
+      .send(_.extend
         client_id       : @options.clientID
         client_secret   : @options.clientSecret
-      }, currentGrantContext))
-      .end((error, response) =>
+        , credentials)
+      .end (error, response) =>
         if error
-          @emit 'authorization:failed'
+          @emit 'authorization:fail'
         else
-          event = if @credentials then 'refreshed' else 'succeeded'
-          @credentials = new Credentials(response.body, this)
-          @emit "authorization:#{event}"
-      )
+          success @credentials
+          event = if @credentials then 'refresh' else 'success'
+          @credentials = new Credentials response.body, this
 
-_.extend Client::, ClientActions
+          @emit "authorization:#{event}"
+          @on 'authorization:expire', @authenticate
+
+
 
 module.exports = Client

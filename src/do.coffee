@@ -1,8 +1,12 @@
-{Adapter, TextMessage,EnterMessage,LeaveMessage} = require 'hubot'
-
-Client  =  require './client'
 _       =  require 'underscore'
 ENV     =  process.env
+
+# Hubot
+{Adapter, TextMessage,EnterMessage,LeaveMessage} = require 'hubot'
+
+# Load the Do API Client
+Client                                           = require './client'
+{PushManager, AccountManager, HubotResponder}    = require './roles'
 
 class DoAdapter extends Adapter
 
@@ -40,17 +44,31 @@ class DoAdapter extends Adapter
     client = new Client
       clientID      :  ENV.HUBOT_DO_CLIENT_ID
       clientSecret  :  ENV.HUBOT_DO_CLIENT_SECRET
+
+    client.on 'authorization:succeess', ->
+      console.log "Authentication succeeded."
+      client.fetchAccount()
+
+    client.on 'request:complete', ->
+      console.log "Request Completed."
+
+    client.on 'account:create', ->
+      console.log "Account fetched."
+      client.connectPush()
+
+    client.on 'push:connect', ->
+      console.log "Push Connected"
+      @emit 'connected'
+
+    client.on 'TextMessage', (message) =>
+      console.log message
+      unless @robot.name == message.creator.name
+        @receive new TextMessage(@userForMessage(message), message.text)
+
+    client.authenticate
       username      :  ENV.HUBOT_DO_USERNAME
       password      :  ENV.HUBOT_DO_PASSWORD
 
-    client.on 'authorization:succeeded', -> client.fetchAccount()
-    client.on 'account:created', -> client.connectPush()
-    client.on 'push:connected', -> @emit 'connected'
-
-    client.on 'TextMessage', (message) =>
-      unless @robot.name == message.creator.name
-        @receive new TextMessage(@userForMessage(message), message.text)
-    client.authorize()
 
     @
 
