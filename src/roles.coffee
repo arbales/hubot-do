@@ -14,7 +14,7 @@ AccountManager =
 HubotResponder = 
   sendMessage: (message, user) ->
     @post("/workspaces/#{user.room.workspace_id}/rooms/#{user.room.id}/chats")
-      .send({text: string})
+      .send({text: message})
       .end()
 
   receiveMessage: (message) ->
@@ -39,7 +39,6 @@ PushManager =
             # connection manager since there might be a stale session.
             incoming: (message, callback) =>
               if message.channel == '/meta/subscribe' && !message.successful
-                # Do.connection.check()
                 @emit 'message:fail'
               callback message
 

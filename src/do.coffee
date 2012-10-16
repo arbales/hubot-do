@@ -8,6 +8,8 @@ ENV     =  process.env
 Client                                           = require './client'
 {PushManager, AccountManager, HubotResponder}    = require './roles'
 
+debug = if ENV.DO_HUBOT_DEBUG is 'true' then console.log else (->)
+
 class DoAdapter extends Adapter
 
   # Public: Raw method for sending data back to the chat source. Extend this.
@@ -17,8 +19,8 @@ class DoAdapter extends Adapter
   #
   # Returns nothing.
   send: (user, strings...) ->
-    for string in string
-      @client.send string, user
+    for string in strings
+      @client.sendMessage string, user
 
   # Public: Raw method for building a reply and sending it back to the chat
   # source. Extend this.
@@ -45,23 +47,23 @@ class DoAdapter extends Adapter
       clientID      :  ENV.HUBOT_DO_CLIENT_ID
       clientSecret  :  ENV.HUBOT_DO_CLIENT_SECRET
 
-    client.on 'authorization:succeess', ->
-      console.log "Authentication succeeded."
+    client.on 'authorization:success', ->
+      debug "Authentication succeeded."
       client.fetchAccount()
 
-    client.on 'request:complete', ->
-      console.log "Request Completed."
+    client.on 'request:complete', (request, response) ->
+      debug response.text
 
     client.on 'account:create', ->
-      console.log "Account fetched."
+      debug "Account fetched."
       client.connectPush()
 
     client.on 'push:connect', ->
-      console.log "Push Connected"
+      debug "Push Connected"
       @emit 'connected'
 
     client.on 'TextMessage', (message) =>
-      console.log message
+      debug message.text
       unless @robot.name == message.creator.name
         @receive new TextMessage(@userForMessage(message), message.text)
 
@@ -69,6 +71,7 @@ class DoAdapter extends Adapter
       username      :  ENV.HUBOT_DO_USERNAME
       password      :  ENV.HUBOT_DO_PASSWORD
 
+    @client = client
 
     @
 
