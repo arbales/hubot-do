@@ -47,6 +47,9 @@ class DoAdapter extends Adapter
       clientID      :  ENV.HUBOT_DO_CLIENT_ID
       clientSecret  :  ENV.HUBOT_DO_CLIENT_SECRET
 
+    # Extend this client with the roles required for Hubot and Push.
+    _.extend client, AccountManager, PushManager, HubotResponder
+
     client.on 'authorization:success', ->
       debug "Authentication succeeded."
       client.fetchAccount()
