@@ -1,6 +1,6 @@
 {
   "name":        "hubot-do",
-  "version":     "0.1.0",
+  "version":     "0.1.1",
   "author":      "arbales",
   "keywords":    "github do do.com hubot adapter",
   "description": "A Do adapter for hubot",
