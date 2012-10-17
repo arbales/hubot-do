@@ -1,8 +1,8 @@
-_         = require 'underscore'
-Faye      = require 'faye'
-ENV       = process.env
-PUSH_URL  = ENV.HUBOT_DO_PUSH_URL || "https://push.do.com"
-
+_                 = require 'underscore'
+Faye              = require 'faye'
+ENV               = process.env
+PUSH_URL          = ENV.HUBOT_DO_PUSH_URL || "https://push.do.com"
+PRESENCE_INTERVAL = 4 * 60 * 1000
 _.noop = ->
 
 AccountManager =
@@ -25,7 +25,12 @@ HubotResponder =
           when 'add'
             @emit "TextMessage", message.payload
 
-PushManager = 
+PushManager =
+  maintainPresence: ->
+    @_presence = setInterval =>
+      @post('/presence').end()
+    , PRESENCE_INTERVAL
+
   connectPush: ->
     @get('/ping')
       .end (error, response) =>
@@ -51,6 +56,7 @@ PushManager =
               callback message
           _.defer =>
             @pushClient.subscribe("/users/#{@account.id}", @receiveMessage, this)
+            @maintainPresence()
             @emit 'push:connect'
 
 exports.PushManager = PushManager

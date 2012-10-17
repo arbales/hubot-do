@@ -117,9 +117,9 @@ class Client extends EventEmitter
     #
     if options.useCredentials and @credentials?.expired()
       # Reauthorize the client.
-      @authenticate(credentials, {useCredentials: no}) ->
+      @authenticate {useCredentials: no}, =>
         # Reset the acessToken on the request an trigger the appropriate event.
-        r.set('Authorization', "Bearer #{credentials.accessToken}") if credentials.valid() and options.useCredentials
+        r.set('Authorization', "Bearer #{@credentials.accessToken}") if @credentials.valid()
         r.emit('authorization:set')
 
       r.end = ->
