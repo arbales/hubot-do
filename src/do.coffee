@@ -7,8 +7,7 @@ ENV     =  process.env
 # Load the Do API Client
 Client                                           = require './client'
 {PushManager, AccountManager, HubotResponder}    = require './roles'
-
-debug = if ENV.HUBOT_DO_DEBUG is 'true' then console.log else (->)
+{debug, info}                                    = require './debug'
 
 class DoAdapter extends Adapter
 
@@ -65,8 +64,11 @@ class DoAdapter extends Adapter
       debug "Push Connected"
       @emit 'connected'
 
+    client.on 'message:fail', =>
+      debug "Push Subscription Failed"
+
     client.on 'TextMessage', (message) =>
-      debug message.text
+      debug "Message: #{message.text}"
       unless @robot.name == message.creator.name
         @receive new TextMessage(@userForMessage(message), message.text)
 

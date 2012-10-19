@@ -3,6 +3,8 @@ Faye              = require 'faye'
 ENV               = process.env
 PUSH_URL          = ENV.HUBOT_DO_PUSH_URL || "https://push.do.com"
 PRESENCE_INTERVAL = 4 * 60 * 1000
+{debug, info}     = require './debug'
+
 _.noop = ->
 
 AccountManager =
@@ -26,10 +28,15 @@ HubotResponder =
             @emit "TextMessage", message.payload
 
 PushManager =
+  _updatePresence: ->
+    debug 'Maintaining presence...'
+    @post('/presence').end()
+
   maintainPresence: ->
     @_presence = setInterval =>
-      @post('/presence').end()
+      @_updatePresence()
     , PRESENCE_INTERVAL
+    @_updatePresence()
 
   connectPush: ->
     @get('/ping')
@@ -40,10 +47,19 @@ PushManager =
             timeout: 30
             retry: 15
 
+          @pushClient.disable('websocket') if ENV.HUBOT_DO_DISABLE_WEBSOCKETS is 'true'
+
+          @pushClient.bind 'transport:up', ->
+            debug 'transport:up'
+
+          @pushClient.bind 'transport:down', ->
+            debug 'transport:down'
+
           @pushClient.addExtension
             # Detect subscription failures that might happen on reconnects. Notify the
             # connection manager since there might be a stale session.
             incoming: (message, callback) =>
+              info message
               if message.channel == '/meta/subscribe' && !message.successful
                 @emit 'message:fail'
               callback message
@@ -53,6 +69,7 @@ PushManager =
               if message.channel == '/meta/subscribe'
                 message.ext ||= {}
                 message.ext.token = token
+              info message
               callback message
           _.defer =>
             @pushClient.subscribe("/users/#{@account.id}", @receiveMessage, this)

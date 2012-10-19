@@ -4,7 +4,7 @@ ENV            = process.env
 {EventEmitter} = require 'events'
 Request        = require 'superagent'
 Credentials    = require './credentials'
-
+{debug, info}  = require './debug'
 _.noop = ->
 
 CONVENIENCE_METHODS = ['get', 'post', 'put', 'patch', 'del']
